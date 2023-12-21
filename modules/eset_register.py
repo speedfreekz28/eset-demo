@@ -1,36 +1,20 @@
-# v1.0.9.1 (171123-1640)
-VERSION = 'v1.0.9.1 (171123-1640) by rzc0d3r'
-import modules.logger as logger
-import modules.shared_tools as shared_tools
+# v1.0.9.4 (191223-1432)
+VERSION = 'v1.0.9.4 (191223-1432) by rzc0d3r'
 
-from selenium.webdriver import Chrome, ChromeOptions, ChromeService
+from modules.logger import *
+from modules.shared_tools import *
+from modules.sec_email_api import *
 
-import os
 import re
 import time
 
 class EsetRegister:
-    def __init__(self, registered_email_obj, eset_password: str):
+    def __init__(self, registered_email_obj: SecEmail, eset_password: str, driver):
         self.email_obj = registered_email_obj
         self.eset_password = eset_password
-        self.driver = None
+        self.driver = driver
 
-    def initDriver(self, chromedriver_path=None):
-        driver_options = ChromeOptions()
-        driver_options.add_experimental_option('excludeSwitches', ['enable-logging'])
-        driver_options.add_argument("--log-level=3")
-        driver_service = ChromeService(executable_path=chromedriver_path)
-        if os.name == 'posix': # For Linux
-            logger.console_log('Initializing driver for Linux', logger.INFO)
-            driver_options.add_argument('--no-sandbox')
-            driver_options.add_argument('--disable-dev-shm-usage')
-            driver_options.add_argument('--headless')
-        elif os.name == 'nt':
-            logger.console_log('Initializing driver for Windows', logger.INFO)
-        self.driver = Chrome(options=driver_options, service=driver_service)
-        self.driver.set_window_size(600, 600)
-
-    def getToken(self, delay=shared_tools.DEFAULT_DELAY, max_iter=shared_tools.DEFAULT_MAX_ITER) -> str:
+    def getToken(self, delay=DEFAULT_DELAY, max_iter=DEFAULT_MAX_ITER):
         i = 0
         while True:
             json = self.email_obj.read_email()
@@ -48,36 +32,52 @@ class EsetRegister:
             time.sleep(delay)
 
     def createAccount(self):
-        logger.console_log('\n[EMAIL] Register page loading...', logger.INFO)
-        self.driver.get(f'https://login.eset.com/Register')
-        logger.console_log('[EMAIL] Register page is loaded!', logger.OK)
-        self.driver.execute_script(f"{shared_tools.GET_EBID}('Email').value='{self.email_obj.get_full_login()}'\ndocument.forms[0].submit()")
+        exec_js = self.driver.execute_script
+        uCE = untilConditionExecute
 
-        logger.console_log('\n[PASSWD] Register page loading...', logger.INFO)
-        shared_tools.untilConditionExecute(self.driver, f"return typeof {shared_tools.GET_EBID}('Password') === 'object'")
-        shared_tools.untilConditionExecute(self.driver, f"return typeof {shared_tools.GET_EBCN}('input-main input-main--notempty')[0] === 'object'")
-        self.driver.execute_script(f"{shared_tools.GET_EBID}('Password').value='{self.eset_password}'")
-        self.driver.execute_script(f"{shared_tools.GET_EBCN}('input-main input-main--notempty')[0].value='230'\ndocument.forms[0].submit()") # Change Account Region to Ukraine
-        logger.console_log('[PASSWD] Register page is loaded!', logger.OK)
+        console_log('\n[EMAIL] Register page loading...', INFO)
+        self.driver.get('https://login.eset.com/Register')
+        console_log('[EMAIL] Register page is loaded!', OK)
+
+        console_log('\nBypassing cookies...', INFO)
+        if uCE(self.driver, f"return {CLICK_WITH_BOOL}({GET_EBAV}('button', 'id', 'cc-accept'))", max_iter=10, raise_exception_if_failed=False):
+            console_log('Cookies successfully bypassed!', OK)
+            time.sleep(1.5) # Once pressed, you have to wait a little while. If code do not do this, the site does not count the acceptance of cookies
+        else:
+            console_log("Cookies were not bypassed (it doesn't affect the algorithm, I think :D)", ERROR)
+
+        exec_js(f"{GET_EBID}('Email').value='{self.email_obj.get_full_login()}'")
+        exec_js('document.forms[0].submit()')
+
+        console_log('\n[PASSWD] Register page loading...', INFO)
+        uCE(self.driver, f"return typeof {GET_EBID}('Password') === 'object'")
+        uCE(self.driver, f"return typeof {GET_EBCN}('input-main input-main--notempty')[0] === 'object'")
+        exec_js(f"{GET_EBID}('Password').value='{self.eset_password}'")
+        exec_js(f"{GET_EBCN}('input-main input-main--notempty')[0].value='230'") # Change Account Region to Ukraine
+        exec_js('document.forms[0].submit()')
+        console_log('[PASSWD] Register page is loaded!', OK)
         
-        for _ in range(shared_tools.DEFAULT_MAX_ITER):
-            title = self.driver.execute_script('return document.title')
+        for _ in range(DEFAULT_MAX_ITER):
+            title = exec_js('return document.title')
             if title == 'Service not available':
-                raise RuntimeError('\nESET temporarily blocked your IP, try again later!!!\n')
-            url = self.driver.execute_script('return document.URL')
+                raise RuntimeError('\nESET temporarily blocked your IP, try again later!!!')
+            url = exec_js('return document.URL')
             if url == 'https://home.eset.com/':
                 return True
-            time.sleep(shared_tools.DEFAULT_DELAY)
+            time.sleep(DEFAULT_DELAY)
         return False
 
     def confirmAccount(self):
+        uCE = untilConditionExecute
+
         token = self.getToken()
-        logger.console_log(f'\nESET Token: {token}', logger.OK)
-        logger.console_log('\nAccount confirmation is in progress...', logger.INFO)
+        console_log(f'\nESET Token: {token}', OK)
+        console_log('\nAccount confirmation is in progress...', INFO)
         self.driver.get(f'https://login.eset.com/link/confirmregistration?token={token}')
-        shared_tools.untilConditionExecute(self.driver, 'return document.title === "ESET HOME"')
-        shared_tools.untilConditionExecute(self.driver, f'return typeof {shared_tools.GET_EBCN}("verification-email_p")[1] === "object"', positive_result=False)
-        logger.console_log('Account successfully confirmed!', logger.OK)
+        uCE(self.driver, 'return document.title === "ESET HOME"')
+        uCE(self.driver, f'return typeof {GET_EBCN}("verification-email_p")[1] !== "object"')
+        uCE(self.driver, f"return typeof {GET_EBAV}('ion-button', 'robot', 'home-overview-empty-add-license-btn') === 'object'")
+        console_log('Account successfully confirmed!', OK)
         return True
 
     def returnDriver(self):

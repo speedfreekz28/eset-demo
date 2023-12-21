@@ -1,4 +1,4 @@
-# v1.0.1 (171123-1541)
+# v1.0.5 (011223-1716)
 import modules.chrome_driver_installer as chrome_driver_installer
 import modules.logger as logger
 
@@ -7,6 +7,7 @@ import modules.eset_register as eset_register
 import modules.eset_keygen as eset_keygen
 import modules.sec_email_api as sec_email_api
 
+import traceback
 import datetime
 import sys
 import os
@@ -39,41 +40,53 @@ def chrome_driver_installer_menu(): # auto updating or installing chrome driver
         driver_url = chrome_driver_installer.get_driver_download_url()
         if driver_url is None:
             logger.console_log('\nCouldn\'t find the right version for your system!', logger.ERROR)
-            method = input('\nRun the program anyway? (y/n): ')
-            if method == 'n':
-                return False
+            if '--force' not in sys.argv:
+                method = input('\nRun the program anyway? (y/n): ')
+                if method == 'n':
+                    return False
         else:
             logger.console_log('\nFound a suitable version for your system!', logger.OK)
             logger.console_log('\nDownload attempt...', logger.INFO)
             if chrome_driver_installer.download_chrome_driver('.', driver_url):
                 logger.console_log('The Сhrome driver was successfully downloaded and unzipped!', logger.OK)
                 chromedriver_path = os.path.join(os.getcwd(), chromedriver_name)
-                input('\nPress Enter to continue...')
+                if '--force' not in sys.argv:
+                    input('\nPress Enter to continue...')
             else:
                 logger.console_log('Error downloading or unpacking!', logger.ERROR)
-                method = input('\nRun the program anyway? (y/n): ')
-                if method == 'n':
-                    return False
+                if '--force' not in sys.argv:
+                    method = input('\nRun the program anyway? (y/n): ')
+                    if method == 'n':
+                        return False
     else:
         chromedriver_path = os.path.join(os.getcwd(), chromedriver_name)
     return chromedriver_path
 
 if __name__ == '__main__':
     try:
-        chromedriver_path = chrome_driver_installer_menu()
+        if '--cli' in sys.argv:
+            sys.argv.append('--force')
+        driver = None
+        if '--firefox' in sys.argv:
+            driver = shared_tools.initSeleniumWebDriver('firefox')
+        else:
+            chromedriver_path = chrome_driver_installer_menu()
+            if chromedriver_path is not None:
+                os.chmod(chromedriver_path, 0o777)
+            driver = shared_tools.initSeleniumWebDriver('chrome', chromedriver_path)
         only_account = False
-        if len(sys.argv) > 1 and '--account' in sys.argv:
+        if '--account' in sys.argv:
             logger.console_log('\n-- ESET Account Generator {0} --\n'.format(eset_register.VERSION))
             only_account = True
         else:
             logger.console_log('\n-- ESET KeyGen {0} --\n'.format(eset_keygen.VERSION))
+
         email_obj = sec_email_api.SecEmail()
         logger.console_log('Mail registration...', logger.INFO)
         email_obj.register()
-        logger.console_log('Mail registration completed successfully!\n', logger.OK)
+        logger.console_log('Mail registration completed successfully!', logger.OK)
         eset_password = shared_tools.createPassword(6)
-        EsetReg = eset_register.EsetRegister(email_obj, eset_password)
-        EsetReg.initDriver(chromedriver_path)
+        EsetReg = eset_register.EsetRegister(email_obj, eset_password, driver)
         EsetReg.createAccount()
         EsetReg.confirmAccount()
         driver = EsetReg.returnDriver()
@@ -92,9 +105,9 @@ if __name__ == '__main__':
         f.close()
         driver.quit()
     except Exception as E:
-        info = str(E)
-        if str(type(E)).find('selenium') and info.find('Stacktrace:') != -1: # disabling stacktrace output
-            logger.console_log(info.split('Stacktrace:', 1)[0], logger.ERROR)
-        else:
-            logger.console_log(str(E), logger.ERROR)
-    input('Press Enter...')
+        traceback_string = traceback.format_exc()
+        if str(type(E)).find('selenium') and traceback_string.find('Stacktrace:') != -1: # disabling stacktrace output
+            traceback_string = traceback_string.split('Stacktrace:', 1)[0]
+        logger.console_log(traceback_string, logger.ERROR)
+    if '--cli' not in sys.argv:
+        input('Press Enter...')
