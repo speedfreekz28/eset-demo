@@ -9,9 +9,9 @@ on:
         required: false
         default: '0'
       key:
-        description: 'Number of Keys to be generated (default = 1)'
+        description: 'Number of Keys to be generated (default = 5)'
         required: false
-        default: '1'
+        default: '5'
 
 jobs:
   GenerateKey:
